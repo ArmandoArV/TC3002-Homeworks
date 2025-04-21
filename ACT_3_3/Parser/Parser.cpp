@@ -1,39 +1,64 @@
 #include "Parser.h"
 #include <iostream>
-
+#include <sstream>
 using namespace std;
-int Parser::getToken() {
-    return current < tokens.size() ? tokens[current++] : PESO;
-}
 
-void Parser::move() {
-    token = getToken();
-}
-
-void Parser::consume(int t) {
-    if (t == token) {
-        move();
-    } else {
-        throw ::runtime_error("Error: Expected token " + ::to_string(t) + 
-                               ", but found " + ::to_string(token));
+string Parser::tokenToString(int tokenType) const {
+    switch (tokenType) {
+        case MAS: return "'+'";
+        case MENOS: return "'-'";
+        case POR: return "'*'";
+        case DIV: return "'/'";
+        case ID: return "identifier";
+        case NUM: return "number";
+        case PIZQ: return "'('";
+        case PDER: return "')'";
+        case PESO: return "end of input";
+        default: return "unknown token";
     }
 }
 
-void Parser::error(const ::string& msg) {
-    throw ::runtime_error(msg);
+Parser::TokenInfo Parser::getToken() {
+    return current < tokens.size() ? tokens[current++] : TokenInfo{PESO, "$", 0, 0};
+}
+
+void Parser::move() {
+    currentToken = getToken();
+}
+
+void Parser::consume(int expectedType) {
+    if (expectedType == currentToken.type) {
+        move();
+    } else {
+        ostringstream oss;
+        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+            << ": Expected " << tokenToString(expectedType)
+            << ", but found " << tokenToString(currentToken.type)
+            << " (" << currentToken.value << ")";
+        error(oss.str());
+    }
+}
+
+void Parser::error(const string& msg) {
+    lastError = "Line: " + to_string(currentToken.line) + ", Position: " +
+                to_string(currentToken.position) + ": " + msg;
 }
 
 void Parser::E() {
-    if (token == PIZQ || token == NUM || token == ID) {
+    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
         T();
         Ep();
     } else {
-        error("Expected '(', NUM or ID at expression start (E)");
+        ostringstream oss;
+        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+            << ": Expected expression (start with " << tokenToString(PIZQ) << ", "
+            << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
+        error(oss.str());
     }
 }
 
 void Parser::Ep() {
-    switch (token) {
+    switch (currentToken.type) {
         case MAS:
             consume(MAS);
             T();
@@ -48,21 +73,29 @@ void Parser::Ep() {
         case PESO:
             return;
         default:
-            error("Expected '+', '-', ')' or end of input in Ep");
+            ostringstream oss;
+            oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+                << ": Expected " << tokenToString(MAS) << ", " << tokenToString(MENOS)
+                << ", " << tokenToString(PDER) << " or " << tokenToString(PESO);
+            error(oss.str());
     }
 }
 
 void Parser::T() {
-    if (token == PIZQ || token == NUM || token == ID) {
+    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
         F();
         Tp();
     } else {
-        error("Expected '(', NUM or ID at term start (T)");
+        ostringstream oss;
+        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+            << ": Expected term (start with " << tokenToString(PIZQ) << ", "
+            << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
+        error(oss.str());
     }
 }
 
 void Parser::Tp() {
-    switch (token) {
+    switch (currentToken.type) {
         case POR:
             consume(POR);
             F();
@@ -79,12 +112,17 @@ void Parser::Tp() {
         case PESO:
             return;
         default:
-            error("Expected '*', '/', '+', '-', ')' or end of input in Tp");
+            ostringstream oss;
+            oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+                << ": Expected " << tokenToString(POR) << ", " << tokenToString(DIV)
+                << ", " << tokenToString(MAS) << ", " << tokenToString(MENOS)
+                << ", " << tokenToString(PDER) << " or " << tokenToString(PESO);
+            error(oss.str());
     }
 }
 
 void Parser::F() {
-    switch (token) {
+    switch (currentToken.type) {
         case PIZQ:
             consume(PIZQ);
             E();
@@ -97,23 +135,45 @@ void Parser::F() {
             consume(ID);
             break;
         default:
-            error("Expected '(', NUM or ID in F");
+            ostringstream oss;
+            oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+                << ": Expected factor (" << tokenToString(PIZQ) << ", "
+                << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
+            error(oss.str());
     }
 }
 
-void Parser::parse(const ::vector<int>& inputTokens) {
-    if (inputTokens.empty() || inputTokens.back() != PESO) {
-        error("Error: Input must end with end token ($) → 9.");
+void Parser::parse(const vector<TokenInfo>& inputTokens) {
+    lastError.clear();
+
+    if (inputTokens.empty() || inputTokens.back().type != PESO) {
+        lastError = "Line: 1, Position: 0: Input must end with end token ($)";
+        cout << lastError << endl;
+        return;
     }
 
     tokens = inputTokens;
     current = 0;
     move();
+
     E();
 
-    if (token != PESO) {
-        error("Error: Expected end of input, but there are more tokens to analyze.");
+    if (lastError.empty() && currentToken.type != PESO) {
+        ostringstream oss;
+        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
+            << ": Expected " << tokenToString(PESO) << ", but found "
+            << tokenToString(currentToken.type);
+        lastError = "Line: " + to_string(currentToken.line) + ", Position: " +
+                    to_string(currentToken.position) + ": " + oss.str();
     }
 
-    ::cout << "SUCCESS: Parsing successful." << ::endl;
+    if (!lastError.empty()) {
+        cout << lastError << endl;
+    } else {
+        /*
+         * cout << "✅ Parsing successful at line " << currentToken.line
+             << ", position " << currentToken.position << endl;
+             */
+        cout << "Parsing successful!" << endl;
+    }
 }
