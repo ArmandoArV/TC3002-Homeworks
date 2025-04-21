@@ -2,7 +2,6 @@
 #include <cctype>
 #include <stdexcept>
 #include <iostream>
-#include "../Token/Token.h"
 
 const std::unordered_set<std::string> Lexer::keywords = {
     "and", "break", "dec", "elif", "else", "false", "if", "inc",
@@ -33,9 +32,26 @@ void Lexer::advance() {
 }
 
 void Lexer::skipWhitespace() {
-    while (std::isspace(currentChar())) {
-        advance();
+    while (position < source.length()) {
+        char c = currentChar();
+        if (c == '\n') {
+            line++;
+            column = 1;
+            position++;
+        } else if (isspace(c)) {
+            advance();
+        } else {
+            break;
+        }
     }
+}
+
+bool isSpecialChar(char c) {
+    return static_cast<unsigned char>(c) > 127;
+}
+
+bool isLatinLetter(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
 Token Lexer::readNumber() {
@@ -43,7 +59,12 @@ Token Lexer::readNumber() {
     size_t startColumn = column;
     std::string numStr;
 
-    while (std::isdigit(currentChar())) {
+    if (currentChar() == '-') {
+        numStr += '-';
+        advance();
+    }
+
+    while (isdigit(currentChar())) {
         numStr += currentChar();
         advance();
     }
@@ -56,16 +77,129 @@ Token Lexer::readIdentifier() {
     size_t startColumn = column;
     std::string ident;
 
-    while (std::isalnum(currentChar()) || currentChar() == '_') {
+    if (isLatinLetter(currentChar()) || currentChar() == '_') {
+        ident += currentChar();
+        advance();
+    } else {
+        return {TokenKind::UNKNOWN, std::string(1, currentChar()), startLine, startColumn};
+    }
+
+    while (isalnum(currentChar()) || currentChar() == '_') {
         ident += currentChar();
         advance();
     }
 
     if (keywords.count(ident)) {
+        if (ident == "true" || ident == "false") {
+            return {TokenKind::LIT_BOOL, ident, startLine, startColumn};
+        }
         return {TokenKindFromString(ident), ident, startLine, startColumn};
     }
 
     return {TokenKind::IDENTIFIER, ident, startLine, startColumn};
+}
+
+Token Lexer::readString() {
+    size_t startLine = line;
+    size_t startColumn = column;
+    std::string str;
+    advance(); // Skip opening quote
+
+    while (currentChar() != '"' && currentChar() != '\0') {
+        if (currentChar() == '\\') {
+            advance();
+            switch (currentChar()) {
+                case 'n': str += '\n'; break;
+                case 'r': str += '\r'; break;
+                case 't': str += '\t'; break;
+                case '\\': str += '\\'; break;
+                case '"': str += '"'; break;
+                case '\'': str += '\''; break;
+                default:
+                    str += '\\';
+                    str += currentChar();
+                    break;
+            }
+        } else {
+            str += currentChar();
+        }
+        advance();
+    }
+
+    if (currentChar() != '"') {
+        throw std::runtime_error("Unterminated string literal");
+    }
+    advance(); // Skip closing quote
+
+    return {TokenKind::LIT_STR, str, startLine, startColumn};
+}
+
+Token Lexer::readChar() {
+    size_t startLine = line;
+    size_t startColumn = column;
+    std::string ch;
+    advance(); // Skip opening quote
+
+    if (currentChar() == '\\') {
+        advance();
+        switch (currentChar()) {
+            case 'n': ch = "\n"; break;
+            case 'r': ch = "\r"; break;
+            case 't': ch = "\t"; break;
+            case '\\': ch = "\\"; break;
+            case '\'': ch = "'"; break;
+            default:
+                ch = "\\";
+                ch += currentChar();
+                break;
+        }
+        advance();
+    } else {
+        if (currentChar() == '\'') {
+            throw std::runtime_error("Empty character literal");
+        }
+        ch += currentChar();
+        advance();
+    }
+
+    if (currentChar() != '\'') {
+        throw std::runtime_error("Unterminated character literal");
+    }
+    advance(); // Skip closing quote
+
+    return {TokenKind::LIT_CHAR, ch, startLine, startColumn};
+}
+
+Token Lexer::readLineComment() {
+    size_t startLine = line;
+    size_t startColumn = column;
+    std::string comment;
+    advance(); advance(); // Skip initial //
+
+    while (currentChar() != '\n' && currentChar() != '\0') {
+        comment += currentChar();
+        advance();
+    }
+
+    return {TokenKind::LINE_COMMENT, comment, startLine, startColumn};
+}
+
+Token Lexer::readBlockComment() {
+    size_t startLine = line;
+    size_t startColumn = column;
+    std::string comment;
+    advance(); advance(); // Skip /*
+
+    while (position < source.length()) {
+        if (currentChar() == '*' && peekChar() == '/') {
+            advance(); advance();
+            return {TokenKind::BLOCK_COMMENT, comment, startLine, startColumn};
+        }
+        comment += currentChar();
+        advance();
+    }
+
+    throw std::runtime_error("Unterminated block comment");
 }
 
 TokenKind Lexer::TokenKindFromString(const std::string& str) {
@@ -89,23 +223,102 @@ std::vector<Token> Lexer::tokenize() {
     while (position < source.length()) {
         char c = currentChar();
 
-        if (std::isspace(c)) {
+        if (isspace(c)) {
             skipWhitespace();
             continue;
         }
 
-        if (std::isdigit(c)) {
+        if (static_cast<unsigned char>(c) > 127) {
+            tokens.push_back({TokenKind::UNKNOWN, std::string(1, c), line, column});
+            advance();
+            continue;
+        }
+
+        if (c == '/' && peekChar() == '/') {
+            tokens.push_back(readLineComment());
+            continue;
+        }
+
+        if (c == '/' && peekChar() == '*') {
+            tokens.push_back(readBlockComment());
+            continue;
+        }
+
+        if (isdigit(c) || (c == '-' && isdigit(peekChar()))) {
             tokens.push_back(readNumber());
             continue;
         }
 
-        if (std::isalpha(c) || c == '_') {
+        if (isalpha(c) || c == '_') {
             tokens.push_back(readIdentifier());
             continue;
         }
 
-        // Handle other cases (e.g., operators, strings, etc.)
-        advance();
+        if (c == '"') {
+            tokens.push_back(readString());
+            continue;
+        }
+
+        if (c == '\'') {
+            tokens.push_back(readChar());
+            continue;
+        }
+
+        switch (c) {
+            case '=':
+                advance();
+                if (currentChar() == '=') {
+                    advance();
+                    tokens.push_back({TokenKind::EQUAL, "==", line, column - 2});
+                } else {
+                    tokens.push_back({TokenKind::ASSIGN, "=", line, column - 1});
+                }
+                continue;
+            case '!':
+                advance();
+                if (currentChar() == '=') {
+                    advance();
+                    tokens.push_back({TokenKind::NOT_EQUAL, "!=", line, column - 2});
+                } else {
+                    tokens.push_back({TokenKind::UNKNOWN, "!", line, column - 1});
+                }
+                continue;
+            case '<':
+                advance();
+                if (currentChar() == '=') {
+                    advance();
+                    tokens.push_back({TokenKind::LESS_EQUAL, "<=", line, column - 2});
+                } else {
+                    tokens.push_back({TokenKind::LESS, "<", line, column - 1});
+                }
+                continue;
+            case '>':
+                advance();
+                if (currentChar() == '=') {
+                    advance();
+                    tokens.push_back({TokenKind::GREATER_EQUAL, ">=", line, column - 2});
+                } else {
+                    tokens.push_back({TokenKind::GREATER, ">", line, column - 1});
+                }
+                continue;
+            case '+': advance(); tokens.push_back({TokenKind::PLUS, "+", line, column - 1}); continue;
+            case '-': advance(); tokens.push_back({TokenKind::MINUS, "-", line, column - 1}); continue;
+            case '*': advance(); tokens.push_back({TokenKind::ASTERISK, "*", line, column - 1}); continue;
+            case '/': advance(); tokens.push_back({TokenKind::SLASH, "/", line, column - 1}); continue;
+            case '%': advance(); tokens.push_back({TokenKind::PERCENT, "%", line, column - 1}); continue;
+            case '(': advance(); tokens.push_back({TokenKind::LPAREN, "(", line, column - 1}); continue;
+            case ')': advance(); tokens.push_back({TokenKind::RPAREN, ")", line, column - 1}); continue;
+            case '{': advance(); tokens.push_back({TokenKind::LBRACE, "{", line, column - 1}); continue;
+            case '}': advance(); tokens.push_back({TokenKind::RBRACE, "}", line, column - 1}); continue;
+            case '[': advance(); tokens.push_back({TokenKind::LBRACKET, "[", line, column - 1}); continue;
+            case ']': advance(); tokens.push_back({TokenKind::RBRACKET, "]", line, column - 1}); continue;
+            case ',': advance(); tokens.push_back({TokenKind::COMMA, ",", line, column - 1}); continue;
+            case ';': advance(); tokens.push_back({TokenKind::SEMICOLON, ";", line, column - 1}); continue;
+            case ':': advance(); tokens.push_back({TokenKind::COLON, ":", line, column - 1}); continue;
+            default:
+                advance();
+                tokens.push_back({TokenKind::UNKNOWN, std::string(1, c), line, column - 1});
+        }
     }
 
     tokens.push_back({TokenKind::END_OF_FILE, "", line, column});
