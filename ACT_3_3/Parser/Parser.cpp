@@ -44,42 +44,53 @@ void Parser::error(const string& msg) {
 }
 
 void Parser::E() {
-    T();  // Parse the first term
-    Ep(); // Parse the rest of the expression
+    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
+        T();
+        Ep();
+    } else {
+        error("Expected '(', number, or identifier at the start of an expression.");
+    }
 }
-
 void Parser::T() {
-    F();  // Parse the first factor
-    Tp(); // Parse the rest of the term
+    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
+        F();
+        Tp();
+    } else {
+        error("Expected '(', number, or identifier at the start of a term.");
+    }
 }
 
 void Parser::Ep() {
     switch (currentToken.type) {
         case MAS:
+            consume(MAS);
+            T();
+            Ep();
+            break;
         case MENOS:
-            consume(currentToken.type); // Consume '+' or '-'
-            T();                        // Parse the next term
-            Ep();                       // Continue parsing the rest of the expression
+            consume(MENOS);
+            T();
+            Ep();
             break;
         case PDER:
         case PESO:
             return; // Valid end of expression
         default:
-            ostringstream oss;
-            oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-                << ": Expected '+', '-', ')' or end of input, but found "
-                << tokenToString(currentToken.type);
-            error(oss.str());
+            error("Expected '+', '-', ')', or end of input.");
     }
 }
 
 void Parser::Tp() {
     switch (currentToken.type) {
         case POR:
+            consume(POR);
+            F();
+            Tp();
+            break;
         case DIV:
-            consume(currentToken.type); // Consume '*' or '/'
-            F();                        // Parse the next factor
-            Tp();                       // Continue parsing the rest of the term
+            consume(DIV);
+            F();
+            Tp();
             break;
         case MAS:
         case MENOS:
@@ -97,22 +108,24 @@ void Parser::Tp() {
 
 void Parser::F() {
     switch (currentToken.type) {
-        case PIZQ:
-            consume(PIZQ); // Consume '('
-            E();           // Parse the inner expression
-            consume(PDER); // Consume ')'
-            break;
         case NUM:
-            consume(NUM); // Consume a number
+            consume(NUM);
+            break;
+        case ID:
+            consume(ID);
+            break;
+        case PIZQ:
+            consume(PIZQ);
+            E();
+            consume(PDER);
             break;
         default:
             ostringstream oss;
             oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-                << ": Expected '(', number, but found " << tokenToString(currentToken.type);
+                << ": Expected '(', number, or identifier, but found " << tokenToString(currentToken.type);
             error(oss.str());
     }
 }
-
 void Parser::parse(const vector<TokenInfo>& inputTokens) {
     lastError.clear();
 

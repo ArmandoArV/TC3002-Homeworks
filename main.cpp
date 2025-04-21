@@ -49,8 +49,8 @@ int main() {
     runTest("14 + 5 / 7 * ( 8 + 9 )", "14 + 5 / 7 * ( 8 + 9 )");
 
     // Invalid expressions
-    runTest("9++5 (invalid - consecutive operators)", "9++5");
-    runTest("* ( 6 + 7) (invalid - starts with operator)", "* ( 6 + 7)");
+    runTest("9++5", "9++5");
+    runTest("* ( 6 + 7) ", "* ( 6 + 7)");
 
     return 0;
 }
