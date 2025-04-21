@@ -1,73 +1,56 @@
 #include "./ACT_3_3/Parser/Parser.h"
+#include "./Lexer/Lexer.h"
 #include <iostream>
 #include <vector>
 
-void runTest(const std::string& description, const std::vector<int>& tokenTypes) {
-    std::cout << "Testing: " << description << std::endl;
+void runTest(const string& description, const string& sourceCode) {
+    cout << "Testing: " << description << endl;
 
+    // Step 1: Tokenize the source code using the Lexer
+    Lexer lexer(sourceCode);
+    vector<Token> tokens = lexer.tokenize();
+
+    // Step 2: Convert Lexer tokens to Parser::TokenInfo format
     vector<Parser::TokenInfo> tokenInfos;
-    size_t line = 1;
-    size_t position = 1;
-
-    for (int type : tokenTypes) {
-        string value;
-        switch (type) {
-            case Parser::MAS: value = "+"; break;
-            case Parser::MENOS: value = "-"; break;
-            case Parser::POR: value = "*"; break;
-            case Parser::DIV: value = "/"; break;
-            case Parser::ID: value = "id"; break;
-            case Parser::NUM: value = "num"; break;
-            case Parser::PIZQ: value = "("; break;
-            case Parser::PDER: value = ")"; break;
-            case Parser::PESO: value = "$"; break;
-            default: value = "?"; break;
+    for (const Token& token : tokens) {
+        int type;
+        switch (token.kind) {
+            case TokenKind::PLUS: type = Parser::MAS; break;
+            case TokenKind::MINUS: type = Parser::MENOS; break;
+            case TokenKind::ASTERISK: type = Parser::POR; break;
+            case TokenKind::SLASH: type = Parser::DIV; break;
+            case TokenKind::IDENTIFIER: type = Parser::ID; break;
+            case TokenKind::LIT_INT: type = Parser::NUM; break;
+            case TokenKind::LPAREN: type = Parser::PIZQ; break;
+            case TokenKind::RPAREN: type = Parser::PDER; break;
+            case TokenKind::END_OF_FILE: type = Parser::PESO; break;
+            default: type = -1; break; // Unknown token
         }
-        tokenInfos.push_back({type, value, line, position++});
+        if (type != -1) {
+            tokenInfos.push_back({type, token.value, token.line, token.column});
+        }
     }
 
+    // Step 3: Parse the tokens using the Parser
     try {
         Parser parser;
         parser.parse(tokenInfos);
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR: " << e.what() << std::endl;
-
-        // Print formatted line/position again for clarity
-        size_t linePos = string(e.what()).find("line ");
-        size_t posPos = string(e.what()).find("position ");
-        if (linePos != string::npos && posPos != string::npos) {
-            string lineNum = string(e.what()).substr(linePos + 5, posPos - linePos - 7);
-            string posNum = string(e.what()).substr(posPos + 9);
-            size_t colon = posNum.find(":");
-            if (colon != string::npos) posNum = posNum.substr(0, colon);
-            std::cerr << "Line: " << lineNum << ", Position: " << posNum << ": "
-                      << e.what() << std::endl;
-        }
+    } catch (const exception& e) {
+        cerr << "ERROR: " << e.what() << endl;
     }
 
-    std::cout << "-------------------------" << std::endl;
+    cout << "-------------------------" << endl;
 }
 
 int main() {
     // Valid expressions
-    runTest("( 3 + 4 )",
-            {Parser::PIZQ, Parser::NUM, Parser::MAS, Parser::NUM, Parser::PDER, Parser::PESO});
-
-    runTest("3 * ( 4 + 5 )",
-            {Parser::NUM, Parser::POR, Parser::PIZQ, Parser::NUM, Parser::MAS, Parser::NUM,
-             Parser::PDER, Parser::PESO});
-
-    runTest("14 + 5 / 7 * ( 8 + 9 )",
-            {Parser::NUM, Parser::MAS, Parser::NUM, Parser::DIV, Parser::NUM, Parser::POR,
-             Parser::PIZQ, Parser::NUM, Parser::MAS, Parser::NUM, Parser::PDER, Parser::PESO});
+    runTest("( 3 + 4 )", "( 3 + 4 )");
+    runTest("3 * ( 4 + 5 )", "3 * ( 4 + 5 )");
+    runTest("14 + 5 / 7 * ( 8 + 9 )", "14 + 5 / 7 * ( 8 + 9 )");
 
     // Invalid expressions
-    runTest("9++5 (invalid - consecutive operators)",
-            {Parser::NUM, Parser::MAS, Parser::MAS, Parser::NUM, Parser::PESO});
-
-    runTest("* ( 6 + 7) (invalid - starts with operator)",
-            {Parser::POR, Parser::PIZQ, Parser::NUM, Parser::MAS, Parser::NUM,
-             Parser::PDER, Parser::PESO});
+    runTest("9++5 (invalid - consecutive operators)", "9++5");
+    runTest("* ( 6 + 7) (invalid - starts with operator)", "* ( 6 + 7)");
 
     return 0;
 }

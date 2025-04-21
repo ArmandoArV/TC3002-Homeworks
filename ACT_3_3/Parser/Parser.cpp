@@ -9,7 +9,6 @@ string Parser::tokenToString(int tokenType) const {
         case MENOS: return "'-'";
         case POR: return "'*'";
         case DIV: return "'/'";
-        case ID: return "identifier";
         case NUM: return "number";
         case PIZQ: return "'('";
         case PDER: return "')'";
@@ -45,78 +44,53 @@ void Parser::error(const string& msg) {
 }
 
 void Parser::E() {
-    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
-        T();
-        Ep();
-    } else {
-        ostringstream oss;
-        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-            << ": Expected expression (start with " << tokenToString(PIZQ) << ", "
-            << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
-        error(oss.str());
-    }
+    T();  // Parse the first term
+    Ep(); // Parse the rest of the expression
+}
+
+void Parser::T() {
+    F();  // Parse the first factor
+    Tp(); // Parse the rest of the term
 }
 
 void Parser::Ep() {
     switch (currentToken.type) {
         case MAS:
-            consume(MAS);
-            T();
-            Ep();
-            break;
         case MENOS:
-            consume(MENOS);
-            T();
-            Ep();
+            consume(currentToken.type); // Consume '+' or '-'
+            T();                        // Parse the next term
+            Ep();                       // Continue parsing the rest of the expression
             break;
         case PDER:
         case PESO:
-            return;
+            return; // Valid end of expression
         default:
             ostringstream oss;
             oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-                << ": Expected " << tokenToString(MAS) << ", " << tokenToString(MENOS)
-                << ", " << tokenToString(PDER) << " or " << tokenToString(PESO);
+                << ": Expected '+', '-', ')' or end of input, but found "
+                << tokenToString(currentToken.type);
             error(oss.str());
-    }
-}
-
-void Parser::T() {
-    if (currentToken.type == PIZQ || currentToken.type == NUM || currentToken.type == ID) {
-        F();
-        Tp();
-    } else {
-        ostringstream oss;
-        oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-            << ": Expected term (start with " << tokenToString(PIZQ) << ", "
-            << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
-        error(oss.str());
     }
 }
 
 void Parser::Tp() {
     switch (currentToken.type) {
         case POR:
-            consume(POR);
-            F();
-            Tp();
-            break;
         case DIV:
-            consume(DIV);
-            F();
-            Tp();
+            consume(currentToken.type); // Consume '*' or '/'
+            F();                        // Parse the next factor
+            Tp();                       // Continue parsing the rest of the term
             break;
         case MAS:
         case MENOS:
         case PDER:
         case PESO:
-            return;
+            return; // Valid end of term
         default:
             ostringstream oss;
             oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-                << ": Expected " << tokenToString(POR) << ", " << tokenToString(DIV)
-                << ", " << tokenToString(MAS) << ", " << tokenToString(MENOS)
-                << ", " << tokenToString(PDER) << " or " << tokenToString(PESO);
+                << ": Expected '*', '/', '+', '-', ')' or end of input, but found "
+                << tokenToString(currentToken.type);
             error(oss.str());
     }
 }
@@ -124,21 +98,17 @@ void Parser::Tp() {
 void Parser::F() {
     switch (currentToken.type) {
         case PIZQ:
-            consume(PIZQ);
-            E();
-            consume(PDER);
+            consume(PIZQ); // Consume '('
+            E();           // Parse the inner expression
+            consume(PDER); // Consume ')'
             break;
         case NUM:
-            consume(NUM);
-            break;
-        case ID:
-            consume(ID);
+            consume(NUM); // Consume a number
             break;
         default:
             ostringstream oss;
             oss << "Error at line " << currentToken.line << ", position " << currentToken.position
-                << ": Expected factor (" << tokenToString(PIZQ) << ", "
-                << tokenToString(NUM) << " or " << tokenToString(ID) << ")";
+                << ": Expected '(', number, but found " << tokenToString(currentToken.type);
             error(oss.str());
     }
 }
@@ -170,10 +140,6 @@ void Parser::parse(const vector<TokenInfo>& inputTokens) {
     if (!lastError.empty()) {
         cout << lastError << endl;
     } else {
-        /*
-         * cout << "✅ Parsing successful at line " << currentToken.line
-             << ", position " << currentToken.position << endl;
-             */
         cout << "Parsing successful!" << endl;
     }
 }
